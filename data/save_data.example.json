@@ -1,0 +1,11 @@
+{
+  "total_gold": 0,
+  "high_score": 0,
+  "longest_time": 0,
+  "permanent_upgrades": {
+    "max_health": 0,
+    "move_speed": 0,
+    "base_damage": 0,
+    "gold_bonus": 0
+  }
+}

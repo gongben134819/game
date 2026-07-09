@@ -1,0 +1,14 @@
+__pycache__/
+*.py[cod]
+*$py.class
+
+.env-backup-*/
+.idea/
+
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+data/save_data.json
+
+*.log
