@@ -143,6 +143,7 @@ class Enemy(pygame.sprite.Sprite):
         self.max_health = max(1, int(self.definition["health"] * health_scale))
         self.health = self.max_health
         self.speed = self.definition["speed"] * (0.92 + random.random() * 0.16)
+        self.base_speed = self.speed
         self.damage = self.definition["damage"]
         self.score_value = self.definition["score"]
         self.exp_value = self.definition["exp"]
@@ -151,8 +152,13 @@ class Enemy(pygame.sprite.Sprite):
         self.shoot_timer = random.random() * self.definition.get("shoot_interval", 1.0)
         self.frame_index = 0
         self.flash_timer = 0
+        self.burn_timer = 0
+        self.burn_tick_timer = 0
+        self.burn_damage = 0
+        self.slow_timer = 0
+        self.slow_multiplier = 1.0
 
-        self.frames = resources.load_frames(self.definition["image"], (self.size, self.size), self.draw_fallback, 4)
+        self.frames = resources.load_frames(self.definition["image"], (self.size, self.size), self.draw_fallback, ENEMY_FRAME_COUNT)
         self.image = self.frames[0].copy()
         self.rect = self.image.get_rect(center=pos)
 
@@ -161,7 +167,7 @@ class Enemy(pygame.sprite.Sprite):
         center = size[0] // 2
         color = self.definition["color"]
         core = self.definition["core"]
-        bob = 1 if index in (1, 2) else 0
+        bob = [0, 1, 1, 0, -1, -1][index % ENEMY_FRAME_COUNT]
 
         if self.kind == "tank":
             pygame.draw.rect(surface, color, (3, 6 + bob, size[0] - 6, size[1] - 12), border_radius=6)
@@ -182,12 +188,46 @@ class Enemy(pygame.sprite.Sprite):
         self.flash_timer = 0.08
         return self.health <= 0
 
+    def apply_burn(self, damage_per_tick, duration):
+        self.burn_damage = max(self.burn_damage, damage_per_tick)
+        self.burn_timer = max(self.burn_timer, duration)
+        self.burn_tick_timer = min(self.burn_tick_timer, 0.22)
+
+    def apply_slow(self, multiplier, duration):
+        self.slow_multiplier = min(self.slow_multiplier, multiplier)
+        self.slow_timer = max(self.slow_timer, duration)
+
+    def update_statuses(self, dt):
+        damage_events = []
+        if self.burn_timer > 0:
+            self.burn_timer = max(0, self.burn_timer - dt)
+            self.burn_tick_timer -= dt
+            while self.burn_tick_timer <= 0 and self.burn_timer > 0 and self.health > 0:
+                self.burn_tick_timer += 0.55
+                damage_events.append(self.burn_damage)
+                if self.take_damage(self.burn_damage):
+                    break
+            if self.burn_timer <= 0:
+                self.burn_damage = 0
+                self.burn_tick_timer = 0
+
+        if self.slow_timer > 0:
+            self.slow_timer = max(0, self.slow_timer - dt)
+            if self.slow_timer <= 0:
+                self.slow_multiplier = 1.0
+
+        return damage_events
+
     def update_animation(self, dt):
         self.frame_index = (self.frame_index + (5 if self.is_boss else 7) * dt) % len(self.frames)
         image = self.frames[int(self.frame_index)].copy()
         if self.flash_timer > 0:
             self.flash_timer = max(0, self.flash_timer - dt)
             image.fill((170, 170, 170, 0), special_flags=pygame.BLEND_RGBA_ADD)
+        if self.burn_timer > 0:
+            image.fill((70, 18, 0, 0), special_flags=pygame.BLEND_RGBA_ADD)
+        if self.slow_timer > 0:
+            image.fill((0, 55, 85, 0), special_flags=pygame.BLEND_RGBA_ADD)
         self.image = image
 
     def update_ranged(self, dt):
@@ -226,7 +266,8 @@ class Enemy(pygame.sprite.Sprite):
             elif distance <= preferred_range:
                 direction *= 0
 
-        self.pos += direction * self.speed * dt
+        speed_multiplier = self.slow_multiplier if self.slow_timer > 0 else 1.0
+        self.pos += direction * self.speed * speed_multiplier * dt
         self.rect.center = round(self.pos.x), round(self.pos.y)
         self.update_ranged(dt)
         self.update_animation(dt)

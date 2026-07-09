@@ -11,7 +11,7 @@ PERMANENT_UPGRADES = {
         "description": "每级增加 1 点初始生命",
         "base_cost": 80,
         "cost_step": 70,
-        "max_level": 5,
+        "max_level": 1000,
     },
     "move_speed": {
         "name": "疾行训练",
@@ -25,7 +25,7 @@ PERMANENT_UPGRADES = {
         "description": "每级增加 10% 基础伤害",
         "base_cost": 90,
         "cost_step": 85,
-        "max_level": 5,
+        "max_level": 1000,
     },
     "gold_bonus": {
         "name": "淘金本能",

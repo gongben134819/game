@@ -8,11 +8,16 @@ IMAGE_DIR = os.path.join(ASSET_DIR, "images")
 SOUND_DIR = os.path.join(ASSET_DIR, "sounds")
 DATA_DIR = os.path.join(BASE_DIR, "data")
 SAVE_FILE = os.path.join(DATA_DIR, "save_data.json")
+SETTINGS_FILE = os.path.join(DATA_DIR, "settings_data.json")
 LOGO_FILE = os.path.join(IMAGE_DIR, "logo.jpg")
 
 # 屏幕设置
 SCREEN_WIDTH, SCREEN_HEIGHT = 1280, 720
 FPS = 60
+PLAYER_FRAME_COUNT = 8
+ENEMY_FRAME_COUNT = 6
+DROP_FRAME_COUNT = 6
+WEAPON_FRAME_COUNT = 6
 
 # 游戏节奏
 RUN_DURATION = 360
@@ -35,9 +40,40 @@ PLAYER_BASE_EXP = 18
 MISSILE_SIZE = 18
 MISSILE_SPEED = 560
 BLADE_SIZE = 30
+FLAME_SIZE = 26
+FLAME_SPEED = 430
+FROST_SIZE = 18
+FROST_SPEED = 610
+DRONE_SIZE = 30
+DRONE_PROJECTILE_SIZE = 14
+DRONE_PROJECTILE_SPEED = 520
 ENEMY_PROJECTILE_SIZE = 14
 
 # 表现反馈
+EFFECT_QUALITY = "high"
+EFFECT_QUALITY_PRESETS = {
+    "low": {
+        "max_particles": 120,
+        "trail_interval_scale": 1.8,
+        "particle_multiplier": 0.55,
+        "shockwave_alpha": 70,
+        "afterimage_count": 1,
+    },
+    "medium": {
+        "max_particles": 190,
+        "trail_interval_scale": 1.2,
+        "particle_multiplier": 0.85,
+        "shockwave_alpha": 105,
+        "afterimage_count": 2,
+    },
+    "high": {
+        "max_particles": 300,
+        "trail_interval_scale": 0.8,
+        "particle_multiplier": 1.25,
+        "shockwave_alpha": 145,
+        "afterimage_count": 3,
+    },
+}
 HIT_STOP_TIME = 0.035
 SHAKE_DECAY = 24
 MAX_PARTICLES = 220

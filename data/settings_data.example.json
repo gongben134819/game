@@ -1,0 +1,9 @@
+{
+  "master_volume": 100,
+  "muted": false,
+  "effect_quality": "high",
+  "screen_shake": true,
+  "damage_numbers": true,
+  "background_detail": "high",
+  "fullscreen": false
+}

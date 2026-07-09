@@ -10,5 +10,6 @@ __pycache__/
 .ruff_cache/
 
 data/save_data.json
+data/settings_data.json
 
 *.log

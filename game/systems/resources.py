@@ -11,9 +11,10 @@ class NullSound:
 
 
 class ResourceManager:
-    def __init__(self, image_dir=IMAGE_DIR, sound_dir=SOUND_DIR):
+    def __init__(self, image_dir=IMAGE_DIR, sound_dir=SOUND_DIR, settings_data=None):
         self.image_dir = image_dir
         self.sound_dir = sound_dir
+        self.settings_data = settings_data or {}
         self.image_cache = {}
         self.frame_cache = {}
         self.sound_cache = {}
@@ -95,10 +96,28 @@ class ResourceManager:
             self.sound_cache[name] = NullSound()
         return self.sound_cache[name]
 
+    def set_settings(self, settings_data):
+        self.settings_data = settings_data or {}
+
+    def sound_volume(self):
+        if self.settings_data.get("muted", False):
+            return 0
+        volume = self.settings_data.get("master_volume", 100)
+        if not isinstance(volume, (int, float)):
+            volume = 100
+        return max(0, min(100, int(volume))) / 100
+
     def play(self, name, cooldown=0):
+        volume = self.sound_volume()
+        if volume <= 0:
+            return None
+
         now = pygame.time.get_ticks() / 1000
         if cooldown > 0 and now - self.last_sound_times.get(name, -999) < cooldown:
             return None
 
         self.last_sound_times[name] = now
-        return self.load_sound(name).play()
+        sound = self.load_sound(name)
+        if hasattr(sound, "set_volume"):
+            sound.set_volume(volume)
+        return sound.play()

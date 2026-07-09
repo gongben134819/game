@@ -11,7 +11,7 @@ class Player(pygame.sprite.Sprite):
         self.resources = resources
         permanent_upgrades = permanent_upgrades or {}
 
-        self.frames = resources.load_frames("player", (PLAYER_SIZE, PLAYER_SIZE), self.draw_fallback, 4)
+        self.frames = resources.load_frames("player", (PLAYER_SIZE, PLAYER_SIZE), self.draw_fallback, PLAYER_FRAME_COUNT)
         self.frame_index = 0
         self.animation_timer = 0
         self.facing_left = False
@@ -44,15 +44,23 @@ class Player(pygame.sprite.Sprite):
         self.run_upgrade_levels = {upgrade_id: 0 for upgrade_id in RUN_UPGRADES}
         self.weapons = {weapon_id: 0 for weapon_id in WEAPON_UPGRADES}
         self.weapons["missile"] = 1
+        self.weapon_evolutions = set()
 
     def draw_fallback(self, size, index=0):
         surface = pygame.Surface(size, pygame.SRCALPHA)
         center = size[0] // 2
-        bob = 1 if index in (1, 2) else 0
-        pygame.draw.circle(surface, PLAYER_COLOR, (center, center), center)
-        pygame.draw.circle(surface, PLAYER_OUTLINE, (center, center), center, 3)
-        pygame.draw.circle(surface, WHITE, (center + 9, center - 8 - bob), 5)
-        pygame.draw.rect(surface, (34, 92, 145), (center - 9, center + 8 + bob, 18, 7), border_radius=2)
+        bob = [0, -1, -2, -1, 0, 1, 2, 1][index % PLAYER_FRAME_COUNT]
+        step = 2 if index % 4 in (1, 2) else -1
+        pygame.draw.ellipse(surface, (18, 28, 48, 150), (9, 38, 30, 6))
+        pygame.draw.polygon(surface, (28, 62, 112), [(12, 18 + bob), (36, 18 + bob), (39, 39), (9, 39)])
+        pygame.draw.rect(surface, PLAYER_COLOR, (15, 14 + bob, 18, 24), border_radius=4)
+        pygame.draw.rect(surface, (32, 112, 196), (15, 30 + bob, 18, 8), border_radius=2)
+        pygame.draw.circle(surface, PLAYER_OUTLINE, (24, 9 + bob), 8)
+        pygame.draw.rect(surface, WHITE, (27, 8 + bob, 5, 4), border_radius=1)
+        pygame.draw.rect(surface, (95, 210, 255), (10, 22 + bob, 6, 12), border_radius=2)
+        pygame.draw.rect(surface, (236, 248, 255), (33, 21 + bob, 8, 4), border_radius=2)
+        pygame.draw.rect(surface, (20, 42, 70), (14, 38 + step, 7, 5), border_radius=2)
+        pygame.draw.rect(surface, (20, 42, 70), (28, 38 - step, 7, 5), border_radius=2)
         return surface
 
     def input(self):
@@ -143,6 +151,10 @@ class Player(pygame.sprite.Sprite):
     def upgrade_weapon(self, weapon_id):
         max_level = WEAPON_UPGRADES[weapon_id]["max_level"]
         self.weapons[weapon_id] = min(max_level, self.weapons.get(weapon_id, 0) + 1)
+
+    def evolve_weapon(self, weapon_id):
+        if weapon_id in WEAPON_UPGRADES:
+            self.weapon_evolutions.add(weapon_id)
 
     def take_damage(self, amount):
         if self.invincible_timer > 0:

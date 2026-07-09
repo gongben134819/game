@@ -28,7 +28,7 @@ class Drop(pygame.sprite.Sprite):
         self.trail_timer = 0
 
         definition = DROP_DEFS[kind]
-        self.frames = resources.load_frames(definition["image"], (DROP_SIZE, DROP_SIZE), self.draw_fallback, 4)
+        self.frames = resources.load_frames(definition["image"], (DROP_SIZE, DROP_SIZE), self.draw_fallback, DROP_FRAME_COUNT)
         self.image = self.frames[0].copy()
         self.rect = self.image.get_rect(center=pos)
 

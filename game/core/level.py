@@ -6,9 +6,21 @@ from game.config.settings import *
 from game.entities.drop import Drop
 from game.entities.enemy import ENEMY_TYPES, Enemy
 from game.entities.player import Player
-from game.systems.effects import FloatingText, ScreenShake, burst_particles, trim_group
+from game.systems.effects import (
+    FlashSprite,
+    FloatingText,
+    ScreenShake,
+    Shockwave,
+    burst_particles,
+    death_effect,
+    impact_effect,
+    set_runtime_settings,
+    status_aura,
+    trim_group,
+)
 from game.systems.resources import ResourceManager
 from game.systems.save_data import PERMANENT_UPGRADES, load_save, purchase_upgrade, record_run, save_game
+from game.systems.settings_data import load_settings, normalize_settings_data, save_settings
 from game.systems.upgrades import apply_upgrade, choose_upgrade_options
 from game.systems.weapons import WeaponController
 from game.ui.ui import UI
@@ -27,14 +39,19 @@ class Level:
     PLAYING = "playing"
     LEVEL_UP = "level_up"
     SHOP = "shop"
+    SETTINGS = "settings"
     VICTORY = "victory"
     GAME_OVER = "game_over"
 
-    def __init__(self):
+    def __init__(self, settings_data=None, on_display_settings_change=None):
         # 获取显示表面
         self.display_surface = pygame.display.get_surface()
-        self.ui = UI(self.display_surface)
-        self.resources = ResourceManager()
+        self.settings_data = normalize_settings_data(settings_data if settings_data is not None else load_settings())
+        self.on_display_settings_change = on_display_settings_change
+        self.settings_return_state = self.MENU
+        set_runtime_settings(self.settings_data)
+        self.resources = ResourceManager(settings_data=self.settings_data)
+        self.ui = UI(self.display_surface, self.resources)
         self.save_data = load_save()
         self.state = self.MENU
         self.shop_message = ""
@@ -87,12 +104,22 @@ class Level:
             elif event.key == pygame.K_s:
                 self.shop_message = ""
                 self.state = self.SHOP
+            elif event.key == pygame.K_o:
+                self.open_settings(self.MENU)
 
         elif self.state == self.SHOP:
             if event.key in (pygame.K_ESCAPE, pygame.K_m):
                 self.state = self.MENU
             elif pygame.K_1 <= event.key <= pygame.K_4:
                 self.buy_shop_upgrade(event.key - pygame.K_1)
+
+        elif self.state == self.PLAYING:
+            if event.key == pygame.K_ESCAPE:
+                self.open_settings(self.PLAYING)
+
+        elif self.state == self.SETTINGS:
+            if event.key in (pygame.K_ESCAPE, pygame.K_m):
+                self.close_settings()
 
         elif self.state == self.LEVEL_UP:
             if pygame.K_1 <= event.key <= pygame.K_3:
@@ -114,6 +141,9 @@ class Level:
                 self.resources.play("select")
                 self.shop_message = ""
                 self.state = self.SHOP
+            elif action == "settings":
+                self.resources.play("select")
+                self.open_settings(self.MENU)
 
         elif self.state == self.SHOP:
             button = self.ui.hit_shop(pos)
@@ -131,6 +161,11 @@ class Level:
             if index is not None:
                 self.choose_level_upgrade(index)
 
+        elif self.state == self.SETTINGS:
+            action = self.ui.hit_settings(pos)
+            if action:
+                self.apply_settings_action(action)
+
         elif self.state in (self.GAME_OVER, self.VICTORY):
             action = self.ui.hit_result(pos)
             if action == "restart":
@@ -143,6 +178,57 @@ class Level:
     def start_game(self):
         self.setup_run()
         self.state = self.PLAYING
+
+    def open_settings(self, return_state=None):
+        self.settings_return_state = return_state or self.MENU
+        self.state = self.SETTINGS
+
+    def close_settings(self):
+        self.state = self.settings_return_state if self.settings_return_state == self.PLAYING else self.MENU
+
+    def refresh_settings(self, changed_fullscreen=False):
+        self.settings_data = save_settings(self.settings_data)
+        self.resources.set_settings(self.settings_data)
+        set_runtime_settings(self.settings_data)
+        if not self.settings_data.get("screen_shake", True):
+            self.shake.amount = 0
+            self.shake.offset.update(0, 0)
+        if changed_fullscreen and self.on_display_settings_change:
+            self.on_display_settings_change(self.settings_data)
+
+    def apply_settings_action(self, action):
+        if action == "back":
+            self.resources.play("select")
+            self.close_settings()
+            return
+
+        self.resources.play("select")
+        changed_fullscreen = False
+        if action == "volume_down":
+            self.settings_data["master_volume"] = max(0, self.settings_data.get("master_volume", 100) - 10)
+        elif action == "volume_up":
+            self.settings_data["master_volume"] = min(100, self.settings_data.get("master_volume", 100) + 10)
+        elif action == "muted":
+            self.settings_data["muted"] = not self.settings_data.get("muted", False)
+        elif action == "screen_shake":
+            self.settings_data["screen_shake"] = not self.settings_data.get("screen_shake", True)
+        elif action == "damage_numbers":
+            self.settings_data["damage_numbers"] = not self.settings_data.get("damage_numbers", True)
+        elif action == "fullscreen":
+            self.settings_data["fullscreen"] = not self.settings_data.get("fullscreen", False)
+            changed_fullscreen = True
+        elif action.startswith("effect_quality:"):
+            self.settings_data["effect_quality"] = action.split(":", 1)[1]
+        elif action.startswith("background_detail:"):
+            self.settings_data["background_detail"] = action.split(":", 1)[1]
+        else:
+            return
+
+        self.refresh_settings(changed_fullscreen)
+
+    def add_shake(self, amount):
+        if self.settings_data.get("screen_shake", True):
+            self.shake.add(amount)
 
     def buy_shop_upgrade(self, index):
         upgrade_ids = list(PERMANENT_UPGRADES)
@@ -233,10 +319,12 @@ class Level:
             return
         self.boss_spawned = True
         boss = self.spawn_enemy("boss")
-        self.shake.add(16)
+        self.add_shake(16)
         self.flash_timer = max(self.flash_timer, 0.18)
         self.resources.play("boss")
         self.add_floating_text((SCREEN_WIDTH // 2, 150), "金币领主出现", YELLOW)
+        Shockwave(boss.rect.center, 118, YELLOW, 0.58, 5, self.all_sprites, self.particle_sprites)
+        FlashSprite(boss.rect.center, 48, WHITE, self.all_sprites, self.particle_sprites)
         self.add_particles(boss.rect.center, YELLOW, 42, 240, 6)
 
     def update_spawns(self, dt):
@@ -326,11 +414,13 @@ class Level:
 
         self.score += enemy.score_value
         color = enemy.definition["color"]
-        self.add_particles(enemy.rect.center, color, 12 if not enemy.is_boss else 60, 180 if not enemy.is_boss else 300, 5)
+        death_effect(enemy.rect.center, color, self.all_sprites, self.particle_sprites, enemy.is_boss)
         if enemy.is_elite:
-            self.shake.add(6)
+            Shockwave(enemy.rect.center, 64, color, 0.34, 4, self.all_sprites, self.particle_sprites)
+        if enemy.is_elite:
+            self.add_shake(6)
         if enemy.is_boss:
-            self.shake.add(18)
+            self.add_shake(18)
         self.resources.play("kill", cooldown=0.04)
         self.spawn_drops(enemy)
         is_boss = enemy.is_boss
@@ -350,18 +440,35 @@ class Level:
                     continue
 
                 killed = enemy.take_damage(attack.damage)
-                self.add_hit_feedback(enemy, attack.damage, killed)
+                effect_kind = getattr(attack, "effect_kind", "default")
+                self.add_hit_feedback(enemy, attack.damage, killed, effect_kind)
                 if killed:
                     self.kill_enemy(enemy)
                 if hasattr(attack, "register_hit"):
                     attack.register_hit(enemy)
 
-    def add_hit_feedback(self, enemy, damage, killed=False):
+    def handle_enemy_statuses(self, dt):
+        for enemy in list(self.enemy_sprites):
+            for damage in enemy.update_statuses(dt):
+                killed = enemy.health <= 0
+                self.add_hit_feedback(enemy, damage, killed, "burn")
+                if killed:
+                    self.kill_enemy(enemy)
+                    break
+            if enemy.alive() and enemy.burn_timer > 0 and random.random() < 5.5 * dt:
+                status_aura(enemy.rect.center, "burn", self.all_sprites, self.particle_sprites)
+            if enemy.alive() and enemy.slow_timer > 0 and random.random() < 4.5 * dt:
+                status_aura(enemy.rect.center, "slow", self.all_sprites, self.particle_sprites)
+
+    def add_hit_feedback(self, enemy, damage, killed=False, effect_kind="default"):
         color = enemy.definition["color"]
-        self.add_particles(enemy.rect.center, color, 5 if not killed else 12, 120, 4)
-        self.add_floating_text(enemy.rect.midtop, str(int(damage)), YELLOW if killed else WHITE)
+        impact_effect(enemy.rect.center, effect_kind, self.all_sprites, self.particle_sprites, killed)
+        if effect_kind == "default":
+            self.add_particles(enemy.rect.center, color, 3 if not killed else 8, 110, 3)
+        if self.settings_data.get("damage_numbers", True):
+            self.add_floating_text(enemy.rect.midtop, str(int(damage)), YELLOW if killed else WHITE)
         self.hit_stop_timer = max(self.hit_stop_timer, HIT_STOP_TIME)
-        self.shake.add(2.5 if not enemy.is_boss else 5)
+        self.add_shake(2.5 if not enemy.is_boss else 5)
         self.resources.play("hit", cooldown=0.035)
 
     def add_particles(self, pos, color, count=10, speed=160, size=4):
@@ -387,7 +494,9 @@ class Level:
             self.player.activate_magnet()
             self.add_floating_text(drop.rect.center, "吸附", PURPLE)
 
-        self.add_particles(drop.rect.center, DROP_EFFECT_COLORS.get(drop.kind, CYAN), 6, 120, 3)
+        effect_kind = "gold" if drop.kind == "gold" else "default"
+        impact_effect(drop.rect.center, effect_kind, self.all_sprites, self.particle_sprites)
+        self.add_particles(drop.rect.center, DROP_EFFECT_COLORS.get(drop.kind, CYAN), 4, 120, 3)
         self.resources.play("pickup", cooldown=0.025)
 
     def handle_player_collisions(self):
@@ -414,10 +523,11 @@ class Level:
             self.open_level_up()
 
     def on_player_hurt(self, damage):
-        self.shake.add(11)
+        self.add_shake(11)
         self.flash_timer = max(self.flash_timer, 0.22)
         self.add_particles(self.player.rect.center, RED, 20, 220, 5)
-        self.add_floating_text(self.player.rect.midtop, f"-{damage}", RED)
+        if self.settings_data.get("damage_numbers", True):
+            self.add_floating_text(self.player.rect.midtop, f"-{damage}", RED)
         self.resources.play("hurt")
 
     def finish_run(self, victory):
@@ -435,7 +545,7 @@ class Level:
 
     def draw_world(self):
         self.ui.update_cursor(False)
-        self.ui.draw_background()
+        self.ui.draw_background(self.settings_data.get("background_detail", "high"))
         offset = (round(self.shake.offset.x), round(self.shake.offset.y))
         for sprite in self.all_sprites:
             self.display_surface.blit(sprite.image, sprite.rect.move(offset))
@@ -470,6 +580,7 @@ class Level:
         self.update_spawns(dt)
         self.weapon_controller.update(dt, self)
         self.all_sprites.update(dt)
+        self.handle_enemy_statuses(dt)
         self.handle_attack_collisions()
         self.handle_player_collisions()
         self.draw_world()
@@ -482,6 +593,13 @@ class Level:
         self.draw_world()
         self.ui.draw_result(title, self.player, self.score, self.elapsed_time, self.save_data)
 
+    def run_settings(self):
+        if self.settings_return_state == self.PLAYING:
+            self.draw_world()
+            self.ui.draw_settings(self.settings_data, from_playing=True)
+        else:
+            self.ui.draw_settings(self.settings_data, from_playing=False)
+
     def run(self, dt):
         if self.state == self.MENU:
             self.ui.draw_menu(self.save_data)
@@ -489,6 +607,8 @@ class Level:
             self.ui.draw_shop(self.save_data, self.shop_message)
         elif self.state == self.PLAYING:
             self.run_playing(dt)
+        elif self.state == self.SETTINGS:
+            self.run_settings()
         elif self.state == self.LEVEL_UP:
             self.run_level_up()
         elif self.state == self.VICTORY:
