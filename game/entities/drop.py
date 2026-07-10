@@ -11,6 +11,9 @@ DROP_DEFS = {
     "gold": {"image": "gold", "color": COIN_COLOR, "outline": COIN_OUTLINE},
     "heart": {"image": "heart", "color": RED, "outline": WHITE},
     "magnet": {"image": "magnet", "color": PURPLE, "outline": WHITE},
+    "blueprint_character": {"image": "blueprint_character", "color": BLUE, "outline": WHITE},
+    "blueprint_weapon": {"image": "blueprint_weapon", "color": PURPLE, "outline": WHITE},
+    "blueprint_item": {"image": "blueprint_item", "color": GREEN, "outline": WHITE},
 }
 
 
@@ -45,6 +48,11 @@ class Drop(pygame.sprite.Sprite):
             pygame.draw.arc(surface, definition["color"], (4, 4 + pulse, size[0] - 8, size[1] - 8), math.pi, math.tau, 5)
             pygame.draw.rect(surface, definition["outline"], (3, center, 6, 7))
             pygame.draw.rect(surface, definition["outline"], (size[0] - 9, center, 6, 7))
+        elif self.kind.startswith("blueprint_"):
+            pygame.draw.rect(surface, definition["outline"], (5, 4, size[0] - 10, size[1] - 8), border_radius=3)
+            pygame.draw.rect(surface, definition["color"], (7, 6 + pulse, size[0] - 14, size[1] - 12), border_radius=2)
+            pygame.draw.line(surface, WHITE, (10, 12), (size[0] - 10, 12), 2)
+            pygame.draw.line(surface, WHITE, (10, 17), (size[0] - 13, 17), 1)
         else:
             pygame.draw.circle(surface, definition["outline"], (center, center), center - 2)
             pygame.draw.circle(surface, definition["color"], (center, center), center - 5 + pulse)

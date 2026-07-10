@@ -1,11 +1,37 @@
 {
+  "version": 2,
   "total_gold": 0,
   "high_score": 0,
   "longest_time": 0,
+  "completed_chapters": [],
+  "endless_highest_floor": 0,
   "permanent_upgrades": {
     "max_health": 0,
     "move_speed": 0,
     "base_damage": 0,
     "gold_bonus": 0
-  }
+  },
+  "unlocked_characters": [
+    "mage"
+  ],
+  "unlocked_weapons": [
+    "missile",
+    "blade",
+    "pulse"
+  ],
+  "unlocked_items": [],
+  "item_levels": {
+    "revive_charm": 0,
+    "starter_magnet": 0,
+    "exp_charm": 0,
+    "gold_dice": 0,
+    "boss_hunter": 0,
+    "blueprint_radar": 0
+  },
+  "blueprints": {
+    "character": 0,
+    "weapon": 0,
+    "item": 0
+  },
+  "selected_character": "mage"
 }

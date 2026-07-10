@@ -11,6 +11,7 @@ RUN_UPGRADES = {
     "pickup_range": {"title": "收集范围", "max_level": 6},
 }
 
+
 WEAPON_UPGRADES = {
     "missile": {"title": "魔法飞弹", "max_level": 8},
     "blade": {"title": "旋转刀刃", "max_level": 6},
@@ -20,13 +21,14 @@ WEAPON_UPGRADES = {
     "drone": {"title": "金币无人机", "max_level": 6},
 }
 
+
 EVOLUTION_REQUIREMENTS = {
-    "missile": {"stat": "missile_count", "level": 2, "title": "星雨飞弹", "description": "飞弹可穿透并分裂追击"},
-    "blade": {"stat": "damage", "level": 4, "title": "幻影刀阵", "description": "刀刃留下残影伤害"},
-    "pulse": {"stat": "fire_rate", "level": 4, "title": "天罚雷环", "description": "脉冲额外召唤雷击"},
-    "flame": {"stat": "damage", "level": 3, "title": "炼狱火场", "description": "火场范围扩大并持续灼烧"},
-    "frost": {"stat": "pickup_range", "level": 3, "title": "极寒冰瀑", "description": "冰霜扇形扩大并强化减速"},
-    "drone": {"stat": "fire_rate", "level": 3, "title": "黄金齐射", "description": "无人机周期性齐射"},
+    "missile": {"stat": "missile_count", "level": 2, "title": "星雨飞弹", "description": "飞弹可穿透并分裂追击。"},
+    "blade": {"stat": "damage", "level": 4, "title": "幻影刀阵", "description": "刀刃留下残影造成追加伤害。"},
+    "pulse": {"stat": "fire_rate", "level": 4, "title": "天罚雷环", "description": "脉冲额外召唤雷击。"},
+    "flame": {"stat": "damage", "level": 3, "title": "炼狱火场", "description": "火场范围扩大并持续灼烧。"},
+    "frost": {"stat": "pickup_range", "level": 3, "title": "极寒冰瀑", "description": "冰霜扇形扩大并强化减速。"},
+    "drone": {"stat": "fire_rate", "level": 3, "title": "黄金齐射", "description": "无人机周期性齐射。"},
 }
 
 
@@ -43,6 +45,13 @@ def _stat_level(player, upgrade_id):
 
 def _weapon_level(player, weapon_id):
     return player.weapons.get(weapon_id, 0)
+
+
+def _unlocked_weapons(player):
+    unlocked = getattr(player, "unlocked_weapons", None)
+    if unlocked is None:
+        return set(WEAPON_UPGRADES)
+    return set(unlocked)
 
 
 def _can_evolve(player, weapon_id):
@@ -64,22 +73,23 @@ def build_upgrade_pool(player):
 
         next_level = current_level + 1
         descriptions = {
-            "damage": f"所有武器伤害 +15%（等级 {next_level}）",
-            "fire_rate": f"武器冷却缩短 8%（等级 {next_level}）",
-            "missile_count": f"魔法飞弹额外发射数 +1（等级 {next_level}）",
-            "move_speed": f"移动速度 +18（等级 {next_level}）",
-            "max_health": f"最大生命 +1 并回复 1 点（等级 {next_level}）",
-            "pickup_range": f"拾取范围 +20（等级 {next_level}）",
+            "damage": f"所有武器伤害 +15%（等级 {next_level}）。",
+            "fire_rate": f"武器冷却缩短 8%（等级 {next_level}）。",
+            "missile_count": f"魔法飞弹额外发射数 +1（等级 {next_level}）。",
+            "move_speed": f"移动速度 +18（等级 {next_level}）。",
+            "max_health": f"最大生命 +1 并回复 1 点（等级 {next_level}）。",
+            "pickup_range": f"拾取范围 +20（等级 {next_level}）。",
         }
         pool.append(UpgradeOption(upgrade_id, definition["title"], descriptions[upgrade_id]))
 
+    unlocked = _unlocked_weapons(player)
     for weapon_id, definition in WEAPON_UPGRADES.items():
+        if weapon_id not in unlocked:
+            continue
+
         current_level = _weapon_level(player, weapon_id)
         if current_level < definition["max_level"]:
-            if current_level == 0:
-                description = "解锁新武器"
-            else:
-                description = f"强化武器效果（等级 {current_level + 1}）"
+            description = "解锁新武器。" if current_level == 0 else f"强化武器效果（等级 {current_level + 1}）。"
             pool.append(UpgradeOption(f"weapon:{weapon_id}", definition["title"], description))
             continue
 

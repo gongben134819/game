@@ -6,6 +6,8 @@ from game.config.settings import *
 from game.entities.drop import Drop
 from game.entities.enemy import ENEMY_TYPES, Enemy
 from game.entities.player import Player
+from game.systems.chapters import CHAPTER_ORDER, MapMechanicController, chapter_unlocked, get_chapter
+from game.systems.characters import CHARACTERS
 from game.systems.effects import (
     FlashSprite,
     FloatingText,
@@ -21,6 +23,15 @@ from game.systems.effects import (
 from game.systems.resources import ResourceManager
 from game.systems.save_data import PERMANENT_UPGRADES, load_save, purchase_upgrade, record_run, save_game
 from game.systems.settings_data import load_settings, normalize_settings_data, save_settings
+from game.systems.unlocks import (
+    BLUEPRINT_TYPES,
+    CHARACTER_UNLOCKS,
+    ITEM_DEFS,
+    WEAPON_UNLOCKS,
+    purchase_character_unlock,
+    purchase_item,
+    purchase_weapon_unlock,
+)
 from game.systems.upgrades import apply_upgrade, choose_upgrade_options
 from game.systems.weapons import WeaponController
 from game.ui.ui import UI
@@ -31,11 +42,17 @@ DROP_EFFECT_COLORS = {
     "gold": YELLOW,
     "heart": GREEN,
     "magnet": PURPLE,
+    "blueprint_character": BLUE,
+    "blueprint_weapon": PURPLE,
+    "blueprint_item": GREEN,
 }
 
 
 class Level:
     MENU = "menu"
+    CHAPTER_SELECT = "chapter_select"
+    ENDLESS_SELECT = "endless_select"
+    CHARACTER_SELECT = "character_select"
     PLAYING = "playing"
     LEVEL_UP = "level_up"
     SHOP = "shop"
@@ -43,23 +60,40 @@ class Level:
     VICTORY = "victory"
     GAME_OVER = "game_over"
 
-    def __init__(self, settings_data=None, on_display_settings_change=None):
-        # 获取显示表面
+    MODE_CHAPTER = "chapter"
+    MODE_ENDLESS = "endless"
+
+    def __init__(self, settings_data=None, on_display_settings_change=None, input_manager=None):
         self.display_surface = pygame.display.get_surface()
         self.settings_data = normalize_settings_data(settings_data if settings_data is not None else load_settings())
         self.on_display_settings_change = on_display_settings_change
+        self.input_manager = input_manager
         self.settings_return_state = self.MENU
         set_runtime_settings(self.settings_data)
         self.resources = ResourceManager(settings_data=self.settings_data)
-        self.ui = UI(self.display_surface, self.resources)
+        self.ui = UI(self.display_surface, self.resources, self.input_manager)
         self.save_data = load_save()
         self.state = self.MENU
         self.shop_message = ""
+        self.shop_tab = "upgrades"
+        self.shop_page = 0
         self.result_saved = False
-        self.setup_run()
+        self.current_mode = self.MODE_CHAPTER
+        self.current_chapter_id = "mine"
+        self.endless_floor = 1
+        self.floor_timer = 0
+        self.run_blueprints = {blueprint_type: 0 for blueprint_type in BLUEPRINT_TYPES}
+        self.setup_run(self.MODE_CHAPTER, "mine")
 
-    def setup_run(self):
-        # 创建精灵组
+    def setup_run(self, mode=None, chapter_id=None):
+        self.current_mode = mode or self.current_mode
+        self.current_chapter_id = chapter_id or self.current_chapter_id or "mine"
+        self.current_chapter = get_chapter(self.current_chapter_id)
+        self.map_mechanics = MapMechanicController(self.current_chapter_id)
+        self.endless_floor = 1
+        self.floor_timer = 0
+        self.run_blueprints = {blueprint_type: 0 for blueprint_type in BLUEPRINT_TYPES}
+
         self.all_sprites = pygame.sprite.Group()
         self.enemy_sprites = pygame.sprite.Group()
         self.attack_sprites = pygame.sprite.Group()
@@ -68,12 +102,15 @@ class Level:
         self.particle_sprites = pygame.sprite.Group()
         self.floating_text_sprites = pygame.sprite.Group()
 
-        permanent_upgrades = self.save_data["permanent_upgrades"]
         self.player = Player(
             (SCREEN_WIDTH // 2, SCREEN_HEIGHT // 2),
             self.resources,
-            permanent_upgrades,
+            self.save_data["permanent_upgrades"],
+            self.input_manager,
             self.all_sprites,
+            character_id=self.save_data.get("selected_character", "mage"),
+            unlocked_weapons=self.save_data.get("unlocked_weapons", []),
+            item_levels=self.save_data.get("item_levels", {}),
         )
         self.weapon_controller = WeaponController(self.player, self.resources)
 
@@ -90,7 +127,19 @@ class Level:
         self.flash_timer = 0
         self.result_saved = False
 
+    def current_difficulty(self):
+        if self.current_mode == self.MODE_ENDLESS:
+            return 1.0 + (self.endless_floor - 1) * 0.28 + min(1.8, self.elapsed_time / 360)
+        return self.current_chapter.difficulty * (1.0 + min(1.15, self.elapsed_time / 300))
+
     def handle_event(self, event):
+        if isinstance(event, dict):
+            if event.get("type") == "mouse_down":
+                self.handle_mouse_click(event["pos"])
+            elif event.get("type") == "skill":
+                self.activate_player_skill()
+            return
+
         if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
             self.handle_mouse_click(event.pos)
             return
@@ -100,22 +149,46 @@ class Level:
 
         if self.state == self.MENU:
             if event.key in (pygame.K_SPACE, pygame.K_RETURN):
-                self.start_game()
+                self.state = self.CHAPTER_SELECT
+            elif event.key == pygame.K_e:
+                self.state = self.ENDLESS_SELECT
+            elif event.key == pygame.K_c:
+                self.state = self.CHARACTER_SELECT
             elif event.key == pygame.K_s:
-                self.shop_message = ""
-                self.state = self.SHOP
+                self.open_shop("upgrades")
             elif event.key == pygame.K_o:
                 self.open_settings(self.MENU)
+
+        elif self.state == self.CHAPTER_SELECT:
+            if event.key in (pygame.K_ESCAPE, pygame.K_m):
+                self.state = self.MENU
+            elif pygame.K_1 <= event.key <= pygame.K_5:
+                chapter_id = CHAPTER_ORDER[event.key - pygame.K_1]
+                self.start_chapter(chapter_id)
+
+        elif self.state == self.ENDLESS_SELECT:
+            if event.key in (pygame.K_ESCAPE, pygame.K_m):
+                self.state = self.MENU
+            elif event.key in (pygame.K_SPACE, pygame.K_RETURN):
+                self.start_endless()
+
+        elif self.state == self.CHARACTER_SELECT:
+            if event.key in (pygame.K_ESCAPE, pygame.K_m):
+                self.state = self.MENU
 
         elif self.state == self.SHOP:
             if event.key in (pygame.K_ESCAPE, pygame.K_m):
                 self.state = self.MENU
             elif pygame.K_1 <= event.key <= pygame.K_4:
-                self.buy_shop_upgrade(event.key - pygame.K_1)
+                tabs = ("upgrades", "characters", "weapons", "items")
+                self.shop_tab = tabs[event.key - pygame.K_1]
+                self.shop_page = 0
 
         elif self.state == self.PLAYING:
             if event.key == pygame.K_ESCAPE:
                 self.open_settings(self.PLAYING)
+            elif event.key == pygame.K_SPACE:
+                self.activate_player_skill()
 
         elif self.state == self.SETTINGS:
             if event.key in (pygame.K_ESCAPE, pygame.K_m):
@@ -127,7 +200,7 @@ class Level:
 
         elif self.state in (self.GAME_OVER, self.VICTORY):
             if event.key == pygame.K_r:
-                self.start_game()
+                self.restart_last_mode()
             elif event.key == pygame.K_m:
                 self.state = self.MENU
 
@@ -137,24 +210,69 @@ class Level:
             if action == "start":
                 self.resources.play("select")
                 self.start_game()
+            elif action == "chapter":
+                self.resources.play("select")
+                self.state = self.CHAPTER_SELECT
+            elif action == "endless":
+                self.resources.play("select")
+                self.state = self.ENDLESS_SELECT
+            elif action == "characters":
+                self.resources.play("select")
+                self.state = self.CHARACTER_SELECT
             elif action == "shop":
                 self.resources.play("select")
-                self.shop_message = ""
-                self.state = self.SHOP
+                self.open_shop("upgrades")
             elif action == "settings":
                 self.resources.play("select")
                 self.open_settings(self.MENU)
+            elif action == "quit":
+                pygame.event.post(pygame.event.Event(pygame.QUIT))
+
+        elif self.state == self.CHAPTER_SELECT:
+            button = self.ui.hit_chapter(pos)
+            if not button:
+                return
+            self.resources.play("select")
+            if button["action"] == "back":
+                self.state = self.MENU
+            elif button["action"] == "chapter":
+                self.start_chapter(button["chapter_id"])
+
+        elif self.state == self.ENDLESS_SELECT:
+            action = self.ui.hit_endless(pos)
+            if action == "start":
+                self.resources.play("select")
+                self.start_endless()
+            elif action == "back":
+                self.resources.play("select")
+                self.state = self.MENU
+
+        elif self.state == self.CHARACTER_SELECT:
+            button = self.ui.hit_character(pos)
+            if not button:
+                return
+            self.resources.play("select")
+            if button["action"] == "back":
+                self.state = self.MENU
+            elif button["action"] == "select":
+                self.select_character(button["character_id"])
 
         elif self.state == self.SHOP:
             button = self.ui.hit_shop(pos)
             if not button:
                 return
-
-            self.resources.play("select")
             if button["action"] == "back":
+                self.resources.play("select")
                 self.state = self.MENU
-            elif button["action"] == "upgrade":
-                self.buy_shop_upgrade(button["index"])
+            elif button["action"] == "tab":
+                self.resources.play("select")
+                self.shop_tab = button["tab"]
+                self.shop_page = 0
+            elif button["action"] == "page":
+                self.resources.play("select")
+                self.shop_page = max(0, self.shop_page + button["delta"])
+            elif button["action"] in ("buy", "upgrade"):
+                self.buy_shop_entry(button)
 
         elif self.state == self.LEVEL_UP:
             index = self.ui.hit_level_up(pos)
@@ -170,14 +288,46 @@ class Level:
             action = self.ui.hit_result(pos)
             if action == "restart":
                 self.resources.play("select")
-                self.start_game()
+                self.restart_last_mode()
             elif action == "menu":
                 self.resources.play("select")
                 self.state = self.MENU
 
-    def start_game(self):
-        self.setup_run()
+    def start_chapter(self, chapter_id):
+        if not chapter_unlocked(self.save_data, chapter_id):
+            self.shop_message = "章节尚未解锁"
+            return False
+        self.setup_run(self.MODE_CHAPTER, chapter_id)
         self.state = self.PLAYING
+        return True
+
+    def start_endless(self):
+        self.setup_run(self.MODE_ENDLESS, "mine")
+        self.state = self.PLAYING
+
+    def restart_last_mode(self):
+        if self.current_mode == self.MODE_ENDLESS:
+            self.start_endless()
+        else:
+            self.start_chapter(self.current_chapter_id)
+
+    def start_game(self):
+        return self.start_chapter(self.current_chapter_id or "mine")
+
+    def open_shop(self, tab="upgrades"):
+        self.shop_message = ""
+        self.shop_tab = tab
+        self.shop_page = 0
+        self.state = self.SHOP
+
+    def select_character(self, character_id):
+        if character_id not in self.save_data.get("unlocked_characters", []):
+            self.shop_message = "角色尚未解锁"
+            return False
+        self.save_data["selected_character"] = character_id
+        self.save_data = save_game(self.save_data)
+        self.shop_message = f"已选择 {CHARACTERS[character_id].name}"
+        return True
 
     def open_settings(self, return_state=None):
         self.settings_return_state = return_state or self.MENU
@@ -216,6 +366,7 @@ class Level:
             self.settings_data["damage_numbers"] = not self.settings_data.get("damage_numbers", True)
         elif action == "fullscreen":
             self.settings_data["fullscreen"] = not self.settings_data.get("fullscreen", False)
+            self.settings_data["display_mode"] = "fullscreen" if self.settings_data["fullscreen"] else "windowed"
             changed_fullscreen = True
         elif action.startswith("effect_quality:"):
             self.settings_data["effect_quality"] = action.split(":", 1)[1]
@@ -230,15 +381,88 @@ class Level:
         if self.settings_data.get("screen_shake", True):
             self.shake.add(amount)
 
-    def buy_shop_upgrade(self, index):
-        upgrade_ids = list(PERMANENT_UPGRADES)
-        if index < 0 or index >= len(upgrade_ids):
+    def activate_player_skill(self):
+        if self.state != self.PLAYING or not self.player.skill_ready():
             return False
 
-        self.save_data, success, self.shop_message = purchase_upgrade(self.save_data, upgrade_ids[index])
+        skill = self.player.character_id
+        if skill == "mage":
+            self.damage_radius(self.player.rect.center, 155, self.player.get_damage(55), "pulse")
+            Shockwave(self.player.rect.center, 155, CYAN, 0.32, 4, self.all_sprites, self.particle_sprites)
+        elif skill == "knight":
+            self.player.invincible_timer = max(self.player.invincible_timer, 2.4)
+            self.damage_radius(self.player.rect.center, 125, self.player.get_damage(34), "blade")
+            self.push_enemies(130, 95)
+            Shockwave(self.player.rect.center, 130, GREEN, 0.32, 4, self.all_sprites, self.particle_sprites)
+        elif skill == "rogue":
+            direction = pygame.Vector2(self.player.direction)
+            if direction.magnitude() == 0 and self.player.velocity.magnitude() > 0:
+                direction = self.player.velocity.normalize()
+            if direction.magnitude() == 0:
+                direction.update(1, 0)
+            self.player.pos += direction.normalize() * 190
+            self.player.pos.x = max(self.player.rect.width / 2, min(SCREEN_WIDTH - self.player.rect.width / 2, self.player.pos.x))
+            self.player.pos.y = max(self.player.rect.height / 2, min(SCREEN_HEIGHT - self.player.rect.height / 2, self.player.pos.y))
+            self.player.rect.center = round(self.player.pos.x), round(self.player.pos.y)
+            self.player.invincible_timer = max(self.player.invincible_timer, 0.8)
+            self.add_particles(self.player.rect.center, YELLOW, 24, 260, 4)
+        elif skill == "alchemist":
+            self.damage_radius(self.player.rect.center, 190, self.player.get_damage(38), "flame", burn=True)
+            Shockwave(self.player.rect.center, 190, RED, 0.34, 5, self.all_sprites, self.particle_sprites)
+        elif skill == "witch":
+            self.damage_radius(self.player.rect.center, 185, self.player.get_damage(30), "frost", slow=True)
+            Shockwave(self.player.rect.center, 185, BLUE, 0.34, 5, self.all_sprites, self.particle_sprites)
+        elif skill == "engineer":
+            self.player.active_buff_timer = 5.0
+            self.add_particles(self.player.rect.center, PURPLE, 26, 220, 4)
+
+        self.player.trigger_active_cooldown()
+        self.add_shake(7)
+        self.flash_timer = max(self.flash_timer, 0.08)
+        self.add_floating_text(self.player.rect.midtop, self.player.character.active_name, YELLOW)
+        self.resources.play("select", cooldown=0.08)
+        return True
+
+    def damage_radius(self, center, radius, damage, effect_kind, burn=False, slow=False):
+        origin = pygame.Vector2(center)
+        for enemy in list(self.enemy_sprites):
+            if origin.distance_to(enemy.pos) > radius:
+                continue
+            hit_damage = int(damage * (self.player.boss_damage_multiplier if enemy.is_boss else 1.0))
+            killed = enemy.take_damage(hit_damage)
+            if burn:
+                enemy.apply_burn(max(2, hit_damage // 5), 2.0)
+            if slow:
+                enemy.apply_slow(0.35, 2.4)
+            self.add_hit_feedback(enemy, hit_damage, killed, effect_kind)
+            if killed:
+                self.kill_enemy(enemy)
+
+    def push_enemies(self, radius, force):
+        origin = pygame.Vector2(self.player.rect.center)
+        for enemy in self.enemy_sprites:
+            offset = enemy.pos - origin
+            if 0 < offset.magnitude() <= radius:
+                enemy.pos += offset.normalize() * force
+                enemy.rect.center = round(enemy.pos.x), round(enemy.pos.y)
+
+    def buy_shop_entry(self, button):
+        tab = button.get("tab", self.shop_tab)
+        entry_id = button.get("id")
+        if tab == "upgrades":
+            self.save_data, success, self.shop_message = purchase_upgrade(self.save_data, entry_id)
+        elif tab == "characters":
+            self.save_data, success, self.shop_message = purchase_character_unlock(self.save_data, entry_id)
+        elif tab == "weapons":
+            self.save_data, success, self.shop_message = purchase_weapon_unlock(self.save_data, entry_id)
+        elif tab == "items":
+            self.save_data, success, self.shop_message = purchase_item(self.save_data, entry_id)
+        else:
+            return False
+
+        self.save_data = save_game(self.save_data)
         if success:
             self.resources.play("upgrade")
-            self.save_data = save_game(self.save_data)
         return success
 
     def choose_level_upgrade(self, index):
@@ -283,8 +507,9 @@ class Level:
             choices.append(("tank", 18))
         if elapsed >= 120:
             choices.append(("ranger", 18))
-        if elapsed >= ELITE_START_TIME:
-            choices.append(("elite", 6))
+        elite_weight = 6 if self.current_mode == self.MODE_CHAPTER else 5 + self.endless_floor
+        if elapsed >= ELITE_START_TIME or (self.current_mode == self.MODE_ENDLESS and self.endless_floor >= 2):
+            choices.append(("elite", elite_weight))
 
         total = sum(weight for _, weight in choices)
         roll = random.uniform(0, total)
@@ -299,7 +524,7 @@ class Level:
         kind = kind or self.choose_enemy_kind()
         size = ENEMY_TYPES[kind]["size"]
         pos = self.random_edge_position(size)
-        difficulty = 1.0 + min(1.15, self.elapsed_time / 300)
+        difficulty = self.current_difficulty()
         enemy = Enemy(
             pos,
             self.player,
@@ -322,45 +547,57 @@ class Level:
         self.add_shake(16)
         self.flash_timer = max(self.flash_timer, 0.18)
         self.resources.play("boss")
-        self.add_floating_text((SCREEN_WIDTH // 2, 150), "金币领主出现", YELLOW)
+        name = self.current_chapter.boss_name if self.current_mode == self.MODE_CHAPTER else f"第 {self.endless_floor} 层 Boss"
+        self.add_floating_text((SCREEN_WIDTH // 2, 150), f"{name} 出现", YELLOW)
         Shockwave(boss.rect.center, 118, YELLOW, 0.58, 5, self.all_sprites, self.particle_sprites)
         FlashSprite(boss.rect.center, 48, WHITE, self.all_sprites, self.particle_sprites)
         self.add_particles(boss.rect.center, YELLOW, 42, 240, 6)
 
     def update_spawns(self, dt):
-        if self.elapsed_time >= BOSS_SPAWN_TIME:
+        if self.current_mode == self.MODE_CHAPTER and self.elapsed_time >= BOSS_SPAWN_TIME:
+            self.spawn_boss()
+        elif self.current_mode == self.MODE_ENDLESS and self.floor_timer >= 150 and not self.boss_spawned:
             self.spawn_boss()
 
         self.enemy_timer += dt
-        enemy_interval = max(0.34, ENEMY_SPAWN_TIME - self.elapsed_time * 0.0022)
+        base_interval = ENEMY_SPAWN_TIME - self.elapsed_time * 0.0022
+        if self.current_mode == self.MODE_ENDLESS:
+            base_interval -= (self.endless_floor - 1) * 0.06
+        enemy_interval = max(0.28, base_interval)
         if self.enemy_timer >= enemy_interval:
             self.enemy_timer = 0
             spawn_count = 1
-            if self.elapsed_time >= 150:
+            if self.elapsed_time >= 150 or self.endless_floor >= 2:
                 spawn_count += 1
-            if self.elapsed_time >= 285:
+            if self.elapsed_time >= 285 or self.endless_floor >= 4:
                 spawn_count += 1
             for _ in range(spawn_count):
                 self.spawn_enemy()
 
-        if self.elapsed_time >= ELITE_START_TIME:
+        elite_interval = max(14, 32 - (self.endless_floor - 1) * 2)
+        if self.elapsed_time >= ELITE_START_TIME or (self.current_mode == self.MODE_ENDLESS and self.endless_floor >= 2):
             self.elite_timer += dt
-            if self.elite_timer >= 32:
+            if self.elite_timer >= elite_interval:
                 self.elite_timer = 0
                 self.spawn_enemy("elite")
 
+    def update_endless_floor(self, dt):
+        if self.current_mode != self.MODE_ENDLESS:
+            return
+        self.floor_timer += dt
+        if self.floor_timer < 180:
+            return
+        self.floor_timer = 0
+        self.endless_floor += 1
+        self.boss_spawned = False
+        self.boss = None
+        self.run_blueprints[random.choice(BLUEPRINT_TYPES)] += 1 + self.player.blueprint_bonus // 2
+        self.add_floating_text((SCREEN_WIDTH // 2, 150), f"进入第 {self.endless_floor} 层", CYAN)
+        self.add_shake(10)
+
     def spawn_drops(self, enemy):
         if enemy.exp_value > 0:
-            Drop(
-                enemy.rect.center,
-                "exp",
-                enemy.exp_value,
-                self.player,
-                self.resources,
-                self.all_sprites,
-                self.drop_sprites,
-                effect_groups=(self.all_sprites, self.particle_sprites),
-            )
+            Drop(enemy.rect.center, "exp", enemy.exp_value, self.player, self.resources, self.all_sprites, self.drop_sprites, effect_groups=(self.all_sprites, self.particle_sprites))
 
         gold_chance = 0.38
         if enemy.is_elite:
@@ -373,40 +610,22 @@ class Level:
                 amount = 12
             elif enemy.is_boss:
                 amount = 80
-            Drop(
-                enemy.rect.center,
-                "gold",
-                amount,
-                self.player,
-                self.resources,
-                self.all_sprites,
-                self.drop_sprites,
-                effect_groups=(self.all_sprites, self.particle_sprites),
-            )
+            Drop(enemy.rect.center, "gold", amount, self.player, self.resources, self.all_sprites, self.drop_sprites, effect_groups=(self.all_sprites, self.particle_sprites))
 
         if not enemy.is_boss and random.random() <= 0.045:
-            Drop(
-                enemy.rect.center,
-                "heart",
-                HEART_HEAL_VALUE,
-                self.player,
-                self.resources,
-                self.all_sprites,
-                self.drop_sprites,
-                effect_groups=(self.all_sprites, self.particle_sprites),
-            )
+            Drop(enemy.rect.center, "heart", HEART_HEAL_VALUE, self.player, self.resources, self.all_sprites, self.drop_sprites, effect_groups=(self.all_sprites, self.particle_sprites))
 
         if not enemy.is_boss and random.random() <= 0.035:
-            Drop(
-                enemy.rect.center,
-                "magnet",
-                1,
-                self.player,
-                self.resources,
-                self.all_sprites,
-                self.drop_sprites,
-                effect_groups=(self.all_sprites, self.particle_sprites),
-            )
+            Drop(enemy.rect.center, "magnet", 1, self.player, self.resources, self.all_sprites, self.drop_sprites, effect_groups=(self.all_sprites, self.particle_sprites))
+
+        blueprint_chance = 0.01 + self.player.blueprint_bonus * 0.004
+        if enemy.is_elite:
+            blueprint_chance = 0.08 + self.player.blueprint_bonus * 0.01
+        if enemy.is_boss:
+            blueprint_chance = 1.0
+        if random.random() <= blueprint_chance:
+            blueprint_type = self.current_chapter.reward_blueprint if enemy.is_boss else random.choice(BLUEPRINT_TYPES)
+            Drop(enemy.rect.center, f"blueprint_{blueprint_type}", 1, self.player, self.resources, self.all_sprites, self.drop_sprites, effect_groups=(self.all_sprites, self.particle_sprites))
 
     def kill_enemy(self, enemy):
         if not enemy.alive():
@@ -417,7 +636,6 @@ class Level:
         death_effect(enemy.rect.center, color, self.all_sprites, self.particle_sprites, enemy.is_boss)
         if enemy.is_elite:
             Shockwave(enemy.rect.center, 64, color, 0.34, 4, self.all_sprites, self.particle_sprites)
-        if enemy.is_elite:
             self.add_shake(6)
         if enemy.is_boss:
             self.add_shake(18)
@@ -428,7 +646,13 @@ class Level:
 
         if is_boss:
             self.score += 500
-            self.finish_run(True)
+            if self.current_mode == self.MODE_CHAPTER:
+                self.finish_run(True)
+            else:
+                self.boss_spawned = False
+                self.boss = None
+                self.run_blueprints[random.choice(BLUEPRINT_TYPES)] += 1
+                self.add_floating_text((SCREEN_WIDTH // 2, 150), "Boss 已击败，爬层继续", YELLOW)
 
     def handle_attack_collisions(self):
         collisions = pygame.sprite.groupcollide(self.attack_sprites, self.enemy_sprites, False, False)
@@ -439,9 +663,12 @@ class Level:
                 if hasattr(attack, "can_hit") and not attack.can_hit(enemy):
                     continue
 
-                killed = enemy.take_damage(attack.damage)
+                damage = attack.damage
+                if enemy.is_boss:
+                    damage = max(1, int(damage * self.player.boss_damage_multiplier))
+                killed = enemy.take_damage(damage)
                 effect_kind = getattr(attack, "effect_kind", "default")
-                self.add_hit_feedback(enemy, attack.damage, killed, effect_kind)
+                self.add_hit_feedback(enemy, damage, killed, effect_kind)
                 if killed:
                     self.kill_enemy(enemy)
                 if hasattr(attack, "register_hit"):
@@ -493,6 +720,11 @@ class Level:
         elif drop.kind == "magnet":
             self.player.activate_magnet()
             self.add_floating_text(drop.rect.center, "吸附", PURPLE)
+        elif drop.kind.startswith("blueprint_"):
+            blueprint_type = drop.kind.split("_", 1)[1]
+            amount = int(drop.amount) + (1 if self.player.blueprint_bonus >= 3 and random.random() < 0.25 else 0)
+            self.run_blueprints[blueprint_type] += amount
+            self.add_floating_text(drop.rect.center, f"+{amount}蓝图", DROP_EFFECT_COLORS.get(drop.kind, CYAN))
 
         effect_kind = "gold" if drop.kind == "gold" else "default"
         impact_effect(drop.rect.center, effect_kind, self.all_sprites, self.particle_sprites)
@@ -516,8 +748,12 @@ class Level:
             self.collect_drop(drop)
 
         if self.player.health <= 0:
-            self.finish_run(False)
-            return
+            if self.player.try_revive():
+                self.add_floating_text(self.player.rect.midtop, "复活护符", GREEN)
+                self.add_shake(10)
+            else:
+                self.finish_run(False)
+                return
 
         if self.pending_level_ups > 0 and self.state == self.PLAYING:
             self.open_level_up()
@@ -536,8 +772,21 @@ class Level:
 
         if victory:
             self.player.add_gold(VICTORY_BONUS_GOLD)
+            self.run_blueprints[self.current_chapter.reward_blueprint] += 1 + self.player.blueprint_bonus // 2
+        elif self.current_mode == self.MODE_ENDLESS and self.endless_floor >= 2:
+            self.run_blueprints[random.choice(BLUEPRINT_TYPES)] += max(1, self.endless_floor // 2)
 
-        self.save_data = record_run(self.save_data, self.score, self.elapsed_time, self.player.run_gold)
+        self.save_data = record_run(
+            self.save_data,
+            self.score,
+            self.elapsed_time,
+            self.player.run_gold,
+            victory=victory,
+            mode=self.current_mode,
+            chapter_id=self.current_chapter_id,
+            endless_floor=self.endless_floor,
+            blueprints=self.run_blueprints,
+        )
         self.save_data = save_game(self.save_data)
         self.result_saved = True
         self.resources.play("victory" if victory else "defeat")
@@ -545,7 +794,8 @@ class Level:
 
     def draw_world(self):
         self.ui.update_cursor(False)
-        self.ui.draw_background(self.settings_data.get("background_detail", "high"))
+        self.ui.draw_background(self.settings_data.get("background_detail", "high"), self.current_chapter.theme)
+        self.map_mechanics.draw(self.display_surface)
         offset = (round(self.shake.offset.x), round(self.shake.offset.y))
         for sprite in self.all_sprites:
             self.display_surface.blit(sprite.image, sprite.rect.move(offset))
@@ -553,10 +803,17 @@ class Level:
             self.player,
             self.score,
             self.elapsed_time,
-            RUN_DURATION,
+            RUN_DURATION if self.current_mode == self.MODE_CHAPTER else 180,
             len(self.enemy_sprites),
             self.boss,
+            mode=self.current_mode,
+            chapter=self.current_chapter,
+            endless_floor=self.endless_floor,
+            floor_timer=self.floor_timer,
+            blueprints=self.run_blueprints,
         )
+        if self.input_manager:
+            self.input_manager.draw_touch_controls(self.display_surface, self.player.skill_ready())
         self.draw_flash()
 
     def draw_flash(self):
@@ -577,7 +834,9 @@ class Level:
             return
 
         self.elapsed_time += dt
+        self.update_endless_floor(dt)
         self.update_spawns(dt)
+        self.map_mechanics.update(self, dt)
         self.weapon_controller.update(dt, self)
         self.all_sprites.update(dt)
         self.handle_enemy_statuses(dt)
@@ -591,7 +850,7 @@ class Level:
 
     def run_result(self, title):
         self.draw_world()
-        self.ui.draw_result(title, self.player, self.score, self.elapsed_time, self.save_data)
+        self.ui.draw_result(title, self.player, self.score, self.elapsed_time, self.save_data, self.run_blueprints, self.current_mode, self.endless_floor)
 
     def run_settings(self):
         if self.settings_return_state == self.PLAYING:
@@ -603,8 +862,14 @@ class Level:
     def run(self, dt):
         if self.state == self.MENU:
             self.ui.draw_menu(self.save_data)
+        elif self.state == self.CHAPTER_SELECT:
+            self.ui.draw_chapter_select(self.save_data)
+        elif self.state == self.ENDLESS_SELECT:
+            self.ui.draw_endless_select(self.save_data)
+        elif self.state == self.CHARACTER_SELECT:
+            self.ui.draw_character_select(self.save_data, self.shop_message)
         elif self.state == self.SHOP:
-            self.ui.draw_shop(self.save_data, self.shop_message)
+            self.ui.draw_shop(self.save_data, self.shop_message, self.shop_tab, self.shop_page)
         elif self.state == self.PLAYING:
             self.run_playing(dt)
         elif self.state == self.SETTINGS:

@@ -24,6 +24,18 @@ def weapon_evolved(player, weapon_id):
     return weapon_id in getattr(player, "weapon_evolutions", set())
 
 
+def cooldown_scale(player):
+    if hasattr(player, "cooldown_scale"):
+        return player.cooldown_scale()
+    return player.cooldown_multiplier
+
+
+def scaled_damage(player, enemy, damage):
+    if getattr(enemy, "is_boss", False):
+        damage = int(damage * getattr(player, "boss_damage_multiplier", 1.0))
+    return max(1, damage)
+
+
 class MagicMissile(pygame.sprite.Sprite):
     def __init__(
         self,
@@ -538,7 +550,7 @@ class MagicMissileWeapon:
 
         self.timer += dt
         evolved = weapon_evolved(self.player, "missile")
-        interval = max(0.13 if evolved else 0.16, (0.74 - weapon_level * 0.035) * self.player.cooldown_multiplier)
+        interval = max(0.13 if evolved else 0.16, (0.74 - weapon_level * 0.035) * cooldown_scale(self.player))
         if self.timer < interval:
             return
 
@@ -616,7 +628,7 @@ class PulseWeapon:
 
         self.timer += dt
         evolved = weapon_evolved(self.player, "pulse")
-        interval = max(0.9 if evolved else 1.05, (3.2 - weapon_level * 0.28) * self.player.cooldown_multiplier)
+        interval = max(0.9 if evolved else 1.05, (3.2 - weapon_level * 0.28) * cooldown_scale(self.player))
         if self.timer < interval:
             return
 
@@ -629,8 +641,9 @@ class PulseWeapon:
         struck = []
         for enemy in list(level.enemy_sprites):
             if self.player.pos.distance_to(enemy.pos) <= radius:
-                killed = enemy.take_damage(damage)
-                level.add_hit_feedback(enemy, damage, killed, "pulse")
+                hit_damage = scaled_damage(self.player, enemy, damage)
+                killed = enemy.take_damage(hit_damage)
+                level.add_hit_feedback(enemy, hit_damage, killed, "pulse")
                 struck.append(enemy)
                 if killed:
                     level.kill_enemy(enemy)
@@ -654,7 +667,7 @@ class FlameWeapon:
 
         self.timer += dt
         evolved = weapon_evolved(self.player, "flame")
-        interval = max(0.62, (2.45 - weapon_level * 0.16) * self.player.cooldown_multiplier)
+        interval = max(0.62, (2.45 - weapon_level * 0.16) * cooldown_scale(self.player))
         if self.timer < interval:
             return
 
@@ -693,7 +706,7 @@ class FrostWeapon:
 
         self.timer += dt
         evolved = weapon_evolved(self.player, "frost")
-        interval = max(0.48, (1.8 - weapon_level * 0.1) * self.player.cooldown_multiplier)
+        interval = max(0.48, (1.8 - weapon_level * 0.1) * cooldown_scale(self.player))
         if self.timer < interval:
             return
 
@@ -755,7 +768,7 @@ class DroneWeapon:
             drone.total_slots = desired_count
 
         self.timer += dt
-        interval = max(0.24, (0.88 - weapon_level * 0.055) * self.player.cooldown_multiplier)
+        interval = max(0.24, (0.88 - weapon_level * 0.055) * cooldown_scale(self.player))
         if self.timer >= interval:
             self.timer = 0
             for drone in self.drones:
