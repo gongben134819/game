@@ -178,6 +178,152 @@ def draw_drop(kind, index=0):
     return surface
 
 
+def draw_blueprint(kind, index=0):
+    surface = pixel_surface((24, 24))
+    colors = {
+        "character": (72, 142, 255),
+        "weapon": (168, 116, 255),
+        "item": (82, 196, 120),
+    }
+    color = colors.get(kind, (91, 217, 235))
+    pulse = [0, 1, 2, 1, 0, 1][index % DROP_FRAME_COUNT]
+    pygame.draw.rect(surface, (235, 244, 250), (4, 3, 16, 18), border_radius=3)
+    pygame.draw.rect(surface, color, (6, 5 + pulse // 2, 12, 14), border_radius=2)
+    pygame.draw.line(surface, (255, 255, 255), (8, 10), (16, 10), 2)
+    pygame.draw.line(surface, (255, 255, 255), (8, 14), (15, 14), 1)
+    if kind == "character":
+        pygame.draw.circle(surface, (255, 255, 255), (12, 8), 3)
+    elif kind == "weapon":
+        pygame.draw.polygon(surface, (255, 255, 255), [(12, 7), (16, 12), (12, 17), (8, 12)])
+    else:
+        pygame.draw.rect(surface, (255, 255, 255), (9, 8, 6, 8), border_radius=1)
+    return surface
+
+
+def draw_item_icon(kind):
+    surface = pixel_surface((36, 36))
+    center = 18
+    colors = {
+        "revive_charm": (82, 196, 120),
+        "starter_magnet": (168, 116, 255),
+        "exp_charm": (91, 217, 235),
+        "gold_dice": (244, 190, 62),
+        "boss_hunter": (232, 76, 76),
+        "blueprint_radar": (72, 142, 255),
+    }
+    color = colors.get(kind, (91, 217, 235))
+    pygame.draw.circle(surface, (22, 27, 38), (center, center), 17)
+    pygame.draw.circle(surface, color, (center, center), 14)
+    pygame.draw.circle(surface, (255, 255, 255), (center, center), 14, 2)
+    if kind == "revive_charm":
+        pygame.draw.circle(surface, (255, 255, 255), (center - 5, center - 3), 4)
+        pygame.draw.circle(surface, (255, 255, 255), (center + 5, center - 3), 4)
+        pygame.draw.polygon(surface, (255, 255, 255), [(center - 9, center), (center + 9, center), (center, center + 10)])
+    elif kind == "starter_magnet":
+        pygame.draw.arc(surface, (255, 255, 255), (9, 8, 18, 20), math.pi, math.tau, 4)
+        pygame.draw.rect(surface, (255, 255, 255), (8, 17, 5, 8))
+        pygame.draw.rect(surface, (255, 255, 255), (23, 17, 5, 8))
+    elif kind == "exp_charm":
+        pygame.draw.polygon(surface, (255, 255, 255), [(center, 6), (27, center), (center, 30), (9, center)])
+    elif kind == "gold_dice":
+        pygame.draw.rect(surface, (255, 255, 255), (9, 9, 18, 18), border_radius=3)
+        for point in ((14, 14), (22, 14), (18, 18), (14, 22), (22, 22)):
+            pygame.draw.circle(surface, color, point, 2)
+    elif kind == "boss_hunter":
+        pygame.draw.circle(surface, (255, 255, 255), (center, center), 10, 3)
+        pygame.draw.line(surface, (255, 255, 255), (center, 6), (center, 30), 2)
+        pygame.draw.line(surface, (255, 255, 255), (6, center), (30, center), 2)
+    elif kind == "blueprint_radar":
+        pygame.draw.circle(surface, (255, 255, 255), (center, center), 10, 2)
+        pygame.draw.circle(surface, (255, 255, 255), (center, center), 4)
+        pygame.draw.line(surface, (255, 255, 255), (center, center), (27, 11), 2)
+    return surface
+
+
+def draw_character_icon(kind, color):
+    surface = pixel_surface((48, 48))
+    pygame.draw.ellipse(surface, (8, 12, 22, 150), (8, 38, 32, 6))
+    pygame.draw.polygon(surface, darken(color, 60), [(12, 18), (36, 18), (40, 40), (24, 44), (8, 40)])
+    pygame.draw.rect(surface, color, (15, 16, 18, 22), border_radius=4)
+    pygame.draw.circle(surface, (226, 236, 248), (24, 10), 7)
+    pygame.draw.circle(surface, (255, 255, 255), (28, 9), 2)
+    if kind == "knight":
+        pygame.draw.rect(surface, (210, 224, 236), (14, 5, 20, 9), border_radius=3)
+        pygame.draw.rect(surface, (130, 154, 176), (11, 20, 8, 16), border_radius=2)
+    elif kind == "rogue":
+        pygame.draw.polygon(surface, (30, 42, 34), [(12, 8), (35, 4), (32, 15), (15, 15)])
+        pygame.draw.line(surface, (255, 244, 186), (32, 22), (41, 17), 2)
+    elif kind == "alchemist":
+        pygame.draw.circle(surface, (255, 178, 64), (38, 22), 5)
+        pygame.draw.line(surface, (255, 255, 255), (36, 20), (40, 24), 1)
+    elif kind == "witch":
+        pygame.draw.polygon(surface, (38, 58, 96), [(13, 10), (24, 0), (36, 10)])
+        pygame.draw.rect(surface, (160, 226, 255), (9, 23, 8, 3), border_radius=1)
+    elif kind == "engineer":
+        pygame.draw.circle(surface, (244, 190, 62), (38, 18), 6)
+        pygame.draw.rect(surface, (92, 64, 28), (34, 16, 8, 4), border_radius=1)
+    else:
+        pygame.draw.rect(surface, (68, 48, 92), (14, 7, 20, 5), border_radius=2)
+    return surface
+
+
+def draw_skill_icon(kind, color):
+    surface = pixel_surface((36, 36))
+    center = 18
+    pygame.draw.circle(surface, (22, 27, 38), (center, center), 17)
+    pygame.draw.circle(surface, color, (center, center), 14)
+    pygame.draw.circle(surface, (255, 255, 255), (center, center), 14, 2)
+    if kind == "mage":
+        for angle in range(0, 360, 60):
+            direction = pygame.math.Vector2(1, 0).rotate(angle)
+            pygame.draw.line(surface, (255, 255, 255), (center, center), pygame.math.Vector2(center, center) + direction * 11, 2)
+    elif kind == "knight":
+        pygame.draw.polygon(surface, (255, 255, 255), [(center, 7), (27, 12), (25, 25), (center, 30), (11, 25), (9, 12)])
+    elif kind == "rogue":
+        pygame.draw.polygon(surface, (255, 255, 255), [(8, 22), (25, 8), (21, 18), (29, 18), (12, 30), (16, 21)])
+    elif kind == "alchemist":
+        pygame.draw.circle(surface, (255, 255, 255), (center, center), 8)
+        pygame.draw.rect(surface, color, (14, 9, 8, 9), border_radius=2)
+    elif kind == "witch":
+        pygame.draw.polygon(surface, (255, 255, 255), [(center, 6), (28, center), (center, 30), (8, center)])
+        pygame.draw.circle(surface, color, (center, center), 4)
+    elif kind == "engineer":
+        pygame.draw.circle(surface, (255, 255, 255), (center, center), 9, 3)
+        pygame.draw.rect(surface, (255, 255, 255), (center - 2, 6, 4, 8))
+        pygame.draw.rect(surface, (255, 255, 255), (center - 2, 22, 4, 8))
+    return surface
+
+
+def draw_chapter_icon(kind):
+    surface = pixel_surface((64, 64))
+    palettes = {
+        "mine": ((20, 28, 37), (244, 190, 62)),
+        "lava": ((48, 18, 18), (255, 100, 34)),
+        "frost": ((18, 36, 48), (160, 226, 255)),
+        "factory": ((30, 34, 42), (132, 162, 188)),
+        "throne": ((34, 25, 42), (255, 222, 112)),
+    }
+    base, accent = palettes[kind]
+    surface.fill((0, 0, 0, 0))
+    pygame.draw.rect(surface, base, (4, 4, 56, 56), border_radius=8)
+    pygame.draw.rect(surface, accent, (4, 4, 56, 56), 3, border_radius=8)
+    if kind == "mine":
+        pygame.draw.line(surface, accent, (10, 44), (54, 28), 4)
+        pygame.draw.circle(surface, accent, (24, 24), 8)
+    elif kind == "lava":
+        pygame.draw.polygon(surface, accent, [(12, 52), (24, 20), (34, 50), (45, 18), (56, 52)])
+    elif kind == "frost":
+        pygame.draw.polygon(surface, accent, [(32, 8), (44, 32), (32, 56), (20, 32)])
+        pygame.draw.line(surface, (255, 255, 255), (32, 12), (32, 52), 2)
+    elif kind == "factory":
+        pygame.draw.circle(surface, accent, (32, 32), 18, 4)
+        pygame.draw.circle(surface, accent, (32, 32), 6)
+    elif kind == "throne":
+        pygame.draw.polygon(surface, accent, [(16, 48), (22, 20), (32, 36), (42, 20), (48, 48)])
+        pygame.draw.rect(surface, accent, (18, 46, 28, 6), border_radius=2)
+    return surface
+
+
 def draw_projectile(kind, index=0):
     surface = pixel_surface((30, 30))
     center = 15
@@ -303,6 +449,9 @@ def main():
     save_frames("exp", [draw_drop("exp", index) for index in range(DROP_FRAME_COUNT)])
     save_frames("heart", [draw_drop("heart", index) for index in range(DROP_FRAME_COUNT)])
     save_frames("magnet", [draw_drop("magnet", index) for index in range(DROP_FRAME_COUNT)])
+    save_frames("blueprint_character", [draw_blueprint("character", index) for index in range(DROP_FRAME_COUNT)])
+    save_frames("blueprint_weapon", [draw_blueprint("weapon", index) for index in range(DROP_FRAME_COUNT)])
+    save_frames("blueprint_item", [draw_blueprint("item", index) for index in range(DROP_FRAME_COUNT)])
     save_frames("magic_missile", [draw_projectile("magic_missile", index) for index in range(WEAPON_FRAME_COUNT)])
     save_frames("blade", [draw_projectile("blade", index) for index in range(WEAPON_FRAME_COUNT)])
     save_frames("flame_orb", [draw_projectile("flame_orb", index) for index in range(WEAPON_FRAME_COUNT)])
@@ -316,6 +465,24 @@ def main():
     save_surface("spark", draw_effect("spark"))
     save_surface("burn_flame", draw_effect("burn_flame"))
     save_surface("frost_spark", draw_effect("frost_spark"))
+
+    character_colors = {
+        "mage": (91, 217, 235),
+        "knight": (82, 196, 120),
+        "rogue": (244, 190, 62),
+        "alchemist": (232, 76, 76),
+        "witch": (72, 142, 255),
+        "engineer": (168, 116, 255),
+    }
+    for character_id, color in character_colors.items():
+        save_surface(f"character_{character_id}", draw_character_icon(character_id, color))
+        save_surface(f"skill_{character_id}", draw_skill_icon(character_id, color))
+
+    for item_id in ("revive_charm", "starter_magnet", "exp_charm", "gold_dice", "boss_hunter", "blueprint_radar"):
+        save_surface(f"item_{item_id}", draw_item_icon(item_id))
+
+    for chapter_id in ("mine", "lava", "frost", "factory", "throne"):
+        save_surface(f"chapter_{chapter_id}", draw_chapter_icon(chapter_id))
 
     write_tone("pickup", 980, 0.08, 0.22, 360)
     write_tone("hit", 320, 0.07, 0.32, -80)
