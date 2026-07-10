@@ -33,3 +33,30 @@ python -m py_compile main.py game\config\settings.py game\core\level.py game\ent
 python -m unittest discover -s tests -v
 python scripts\generate_assets.py
 ```
+
+## 打包发布
+
+Windows 安装包和便携包使用 PyInstaller one-folder 作为基础产物，构建依赖单独放在 `requirements-build.txt`，不会加入游戏运行依赖。
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\build_windows.ps1 -Version 0.1.0
+```
+
+构建完成后：
+
+- 可运行目录：`dist\金币冲刺\金币冲刺.exe`
+- 便携包：`release\金币冲刺-portable-0.1.0.zip`
+- 安装包：`release\金币冲刺-setup-0.1.0.exe`
+
+安装包需要本机安装 Inno Setup 6。若未安装，脚本会跳过安装包步骤，但仍会生成 PyInstaller 目录和便携包。
+
+Android debug APK 使用 Buildozer，建议在 Linux、WSL2 或 Docker 环境执行：
+
+```bash
+python -m pip install buildozer
+buildozer android debug
+```
+
+Android 打包说明见 `android/README.md`。真实运行时存档 `data/save_data.json` 和 `data/settings_data.json` 不会进入初始发布包。
+
+打包版首次运行会在用户数据目录创建真实存档和设置文件，Windows 下默认为 `%APPDATA%\CoinRush\`，避免安装到 `Program Files` 后因为目录权限导致无法保存进度。
