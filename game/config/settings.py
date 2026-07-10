@@ -1,12 +1,19 @@
 import os
+import sys
 
 
 # 路径设置
-BASE_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+SOURCE_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+BASE_DIR = getattr(sys, "_MEIPASS", SOURCE_DIR)
+if getattr(sys, "frozen", False):
+    USER_DATA_DIR = os.path.join(os.environ.get("APPDATA", os.path.expanduser("~")), "CoinRush")
+else:
+    USER_DATA_DIR = os.path.join(SOURCE_DIR, "data")
 ASSET_DIR = os.path.join(BASE_DIR, "assets")
 IMAGE_DIR = os.path.join(ASSET_DIR, "images")
 SOUND_DIR = os.path.join(ASSET_DIR, "sounds")
-DATA_DIR = os.path.join(BASE_DIR, "data")
+DATA_DIR = USER_DATA_DIR
+EXAMPLE_DATA_DIR = os.path.join(BASE_DIR, "data")
 SAVE_FILE = os.path.join(DATA_DIR, "save_data.json")
 SETTINGS_FILE = os.path.join(DATA_DIR, "settings_data.json")
 LOGO_FILE = os.path.join(IMAGE_DIR, "logo.jpg")

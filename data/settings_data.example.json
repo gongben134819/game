@@ -5,5 +5,12 @@
   "screen_shake": true,
   "damage_numbers": true,
   "background_detail": "high",
-  "fullscreen": false
+  "fullscreen": false,
+  "display_mode": "windowed",
+  "window_size": [
+    1280,
+    720
+  ],
+  "ui_scale": 1.0,
+  "touch_controls": "auto"
 }

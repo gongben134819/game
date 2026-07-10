@@ -6,6 +6,9 @@ from game.config.settings import DATA_DIR, SETTINGS_FILE
 
 
 QUALITY_LEVELS = ("low", "medium", "high")
+DISPLAY_MODES = ("windowed", "fullscreen")
+WINDOW_SIZE_OPTIONS = ((1280, 720), (1600, 900), (1920, 1080))
+TOUCH_CONTROL_VALUES = (True, False, "auto")
 
 DEFAULT_SETTINGS_DATA = {
     "master_volume": 100,
@@ -15,6 +18,10 @@ DEFAULT_SETTINGS_DATA = {
     "damage_numbers": True,
     "background_detail": "high",
     "fullscreen": False,
+    "display_mode": "windowed",
+    "window_size": [1280, 720],
+    "ui_scale": 1.0,
+    "touch_controls": "auto",
 }
 
 
@@ -38,12 +45,36 @@ def normalize_settings_data(data):
         if value in QUALITY_LEVELS:
             normalized[key] = value
 
+    display_mode = data.get("display_mode")
+    if display_mode in DISPLAY_MODES:
+        normalized["display_mode"] = display_mode
+    elif normalized.get("fullscreen"):
+        normalized["display_mode"] = "fullscreen"
+
+    window_size = data.get("window_size")
+    if isinstance(window_size, (list, tuple)) and len(window_size) == 2:
+        width, height = window_size
+        if isinstance(width, (int, float)) and isinstance(height, (int, float)):
+            size = (int(width), int(height))
+            if size in WINDOW_SIZE_OPTIONS:
+                normalized["window_size"] = [size[0], size[1]]
+
+    ui_scale = data.get("ui_scale")
+    if isinstance(ui_scale, (int, float)):
+        normalized["ui_scale"] = round(max(0.85, min(1.25, float(ui_scale))), 2)
+
+    touch_controls = data.get("touch_controls")
+    if touch_controls in TOUCH_CONTROL_VALUES:
+        normalized["touch_controls"] = touch_controls
+
+    normalized["fullscreen"] = normalized["display_mode"] == "fullscreen"
+
     return normalized
 
 
 def load_settings(path=SETTINGS_FILE):
     if not os.path.exists(path):
-        return copy.deepcopy(DEFAULT_SETTINGS_DATA)
+        return save_settings(DEFAULT_SETTINGS_DATA, path)
 
     try:
         with open(path, "r", encoding="utf-8") as file:
