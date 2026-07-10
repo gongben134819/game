@@ -102,6 +102,9 @@ if (-not $SkipInstaller) {
     if ($iscc) {
         $env:APP_VERSION = $Version
         & $iscc.Source $InnoScript
+        if ($LASTEXITCODE -ne 0) {
+            throw "Inno Setup installer generation failed."
+        }
         Write-Host "Installer output directory: $ReleaseDir"
     } else {
         Write-Warning "ISCC.exe was not found. Inno Setup installer generation was skipped."
